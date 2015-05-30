@@ -1,0 +1,1 @@
+This plugin mod is based off of LangSwapper, which swaps the language set by imported PSP games to the language set in your XMB System Settings. This mod also swaps the buttons (X is set as Enter and O is set as Back)
