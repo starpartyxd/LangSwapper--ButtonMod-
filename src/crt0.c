@@ -39,12 +39,12 @@
 
 // Define for sceUtilitySavedataInitStart.
 #define SavedataInitStart_OFFSET				0x18
-#define MsgDialogInitStart_OFFSET				0x14
+#define MsgDialogInitStart_OFFSET				0x18
 
 // Define for sceUtilityGetSystemParamInt.
 #define PSP_SYSTEMPARAM_ID_INT_LANGUAGE         8
 
-PSP_MODULE_INFO("LangSwapper", PSP_MODULE_KERNEL, 1, 5);
+PSP_MODULE_INFO("LangSwapper", PSP_MODULE_KERNEL, 1, 6);
 
 SceUID thid;
 u32 _sceImposeSetLanguageMode;
@@ -84,22 +84,15 @@ void patched_sceUtilitySavedataInitStart(u32 a0, u32 a1) {
 }
 
 /**
- * This function searches kernel memory and patches a0 and forcely fully changes it to 1. It also patches the button input.
+ * This function searches kernel memory and patches $a0 based on sceUtilityGetSystemParamInt.
  *
  * @ASM_OLD - sltiu $v1, $a0, 12.
  * @ASM_NEW - addiu $a0, zero, $0001
  *
- * Up to 12 modes (0 to 11) exist for the language.
- * Setting it to 1 forces it to always be set based on the System Language that you've chosen in the XMB.
+ * Up to 12 modes (0 to 11) exist for the language. With each number representing the language selected.
  *
- * sceImposeSetLanguageMode() already stores 1 in register $t5 for 6.60, but it differs per firmware.
- * Instead of using $t5, I simply replace the original ASM intruction ("ASM_OLD"(See above)) with my own
- * ("ASM_NEW"(See above)).
- *
- * Only two modes exist for the button mode (0 and 1).
- * 0 -> (X as BACK / O as ENTER).
- * 1 -> (X as ENTER /O as BACK).
- * We simply force the mode to always be set to 1, regardless.
+ * The value is grabbed by sceUtilityGetSystemParamInt and then set to be used by sceImposeSetLanguageMode,
+ * resulting in it setting the language set by the system.
  *
  * TLDR: The function below performs voodoo magic, which does things in memory. :)
  */
@@ -108,7 +101,7 @@ void patchHomeMenu(u32 addr) {
 	for (i = 0; i < ASM_RANGE_MAX; i += 4) {
 		if (_lw(addr + i) == ASM_LANGUAGE_INSTRUCTION) {
 			_sw(ASM_LANGUAGE_PATCHED_INSTRUCTION, addr + i);
-			_sb(value, addr);
+			_sb(value, addr + i);
 			_sw(ASM_LANGUAGE_PATCHED_INSTRUCTION_BRANCH, (addr + i) + 0x4);
 		}
 		if (_lw(addr + i) == ASM_BUTTON_INSTRUCTION) {
