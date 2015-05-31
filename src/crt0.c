@@ -38,16 +38,17 @@
 #define ASM_BUTTON_PATCHED_INSTRUCTION_BRANCH	NOP 			// No Operation
 
 // Define for sceUtilitySavedataInitStart.
-#define InitStart_OFFSET						0x18
+#define SavedataInitStart_OFFSET				0x18
+#define MsgDialogInitStart_OFFSET				0x14
 
 // Define for sceUtilityGetSystemParamInt.
 #define PSP_SYSTEMPARAM_ID_INT_LANGUAGE         8
 
-PSP_MODULE_INFO("LangSwapper", PSP_MODULE_KERNEL, 1, 4);
+PSP_MODULE_INFO("LangSwapper", PSP_MODULE_KERNEL, 1, 5);
 
 SceUID thid;
 u32 _sceImposeSetLanguageMode;
-u32 _sceUtilitySavedataInitStart, sd_sub;
+u32 _sceUtilitySavedataInitStart, _sceUtilityMsgDialogInitStart, sd_sub;
 int value;
 
 /**
@@ -106,12 +107,13 @@ void patchHomeMenu(u32 addr) {
 	int i;
 	for (i = 0; i < ASM_RANGE_MAX; i += 4) {
 		if (_lw(addr + i) == ASM_LANGUAGE_INSTRUCTION) {
-			_sw(ASM_LANGUAGE_PATCHED_INSTRUCTION, addr);
-			_sw(ASM_LANGUAGE_PATCHED_INSTRUCTION_BRANCH, addr + 0x4);
+			_sw(ASM_LANGUAGE_PATCHED_INSTRUCTION, addr + i);
+			_sb(value, addr);
+			_sw(ASM_LANGUAGE_PATCHED_INSTRUCTION_BRANCH, (addr + i) + 0x4);
 		}
 		if (_lw(addr + i) == ASM_BUTTON_INSTRUCTION) {
-			_sw(ASM_BUTTON_PATCHED_INSTRUCTION, addr);
-			_sw(ASM_BUTTON_PATCHED_INSTRUCTION_BRANCH, addr + 0x4);
+			_sw(ASM_BUTTON_PATCHED_INSTRUCTION, addr + i);
+			_sw(ASM_BUTTON_PATCHED_INSTRUCTION_BRANCH, (addr + i) + 0x4);
 		}
 	}
 }
@@ -120,11 +122,9 @@ void patchHomeMenu(u32 addr) {
  * Gets the sub address called by sceUtilitySavedataInitStart and patches it to point to our own sub.
  * Once the patching finishes it continues to run normally.
  */
-void patchSaveData(u32 addr) {
-	sd_sub = ((*(u32*) (addr + InitStart_OFFSET) & 0x03FFFFFF) << 2)
-			| 0x80000000;
-	_sw(MAKE_CALL(patched_sceUtilitySavedataInitStart),
-			addr + InitStart_OFFSET);
+void patchSaveData(u32 addr, u32 offset) {
+	sd_sub = ((*(u32*) (addr + offset) & 0x03FFFFFF) << 2) | 0x80000000;
+	_sw(MAKE_CALL(patched_sceUtilitySavedataInitStart), addr + offset);
 }
 
 /**
@@ -133,6 +133,11 @@ void patchSaveData(u32 addr) {
 int mainThread(SceSize args, void *argp) {
 	s32 ret;
 
+	// Get the system language beforehand. This should always pass.
+	while (sceUtilityGetSystemParamInt(PSP_SYSTEMPARAM_ID_INT_LANGUAGE, &value)
+			!= 0)
+		sceKernelDelayThread(10);
+
 	// Find the function in kernel land and patch the Home menu language.
 	_sceImposeSetLanguageMode = sctrlHENFindFunction("sceImpose_Driver",
 			"sceImpose", 0x36AA6E91);
@@ -140,18 +145,19 @@ int mainThread(SceSize args, void *argp) {
 		patchHomeMenu(_sceImposeSetLanguageMode);
 	}
 
-	// Get the system language beforehand. This should always pass.
-	while (sceUtilityGetSystemParamInt(PSP_SYSTEMPARAM_ID_INT_LANGUAGE, &value)
-			!= 0)
-		sceKernelDelayThread(100);
-
 	// Find the function in kernel land responsible for handling savedata.
 	_sceUtilitySavedataInitStart = sctrlHENFindFunction("sceUtility_Driver",
 			"sceUtility", 0x50C4CD57);
 	if (_sceUtilitySavedataInitStart) {
-		patchSaveData(_sceUtilitySavedataInitStart);
+		patchSaveData(_sceUtilitySavedataInitStart, SavedataInitStart_OFFSET);
 	}
 
+	// Find the function in kernel land responsible for handling the message dialog.
+	_sceUtilityMsgDialogInitStart = sctrlHENFindFunction("sceUtility_Driver",
+			"sceUtility", 0x2AD8E239);
+	if (_sceUtilityMsgDialogInitStart) {
+		patchSaveData(_sceUtilityMsgDialogInitStart, MsgDialogInitStart_OFFSET);
+	}
 	ClearCaches();
 	return 0;
 }
