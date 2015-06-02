@@ -31,20 +31,21 @@
 // Defines for sceImposeSetLanguageMode.
 #define ASM_RANGE_MAX 							0x84
 #define ASM_LANGUAGE_INSTRUCTION 				0x2C83000C 		// sltiu $v1, $a0, 12
-#define ASM_BUTTON_INSTRUCTION 					0x2CA70002		// sltiu $a3, $a1, 2
 #define ASM_LANGUAGE_PATCHED_INSTRUCTION		0x24040001 		// addiu $a0, zero, $0001
 #define ASM_LANGUAGE_PATCHED_INSTRUCTION_BRANCH	0x10000004 		// beq zero, zero, 0x4
+
+#define ASM_BUTTON_INSTRUCTION 					0x2CA70002		// sltiu $a3, $a1, 2
 #define ASM_BUTTON_PATCHED_INSTRUCTION			0x24050001 		// addiu $a1, zero, $0001
 #define ASM_BUTTON_PATCHED_INSTRUCTION_BRANCH	NOP 			// No Operation
 
-// Define for sceUtilitySavedataInitStart.
+// Defines for sceUtilitySavedataInitStart.
 #define SavedataInitStart_OFFSET				0x18
 #define MsgDialogInitStart_OFFSET				0x18
 
 // Define for sceUtilityGetSystemParamInt.
 #define PSP_SYSTEMPARAM_ID_INT_LANGUAGE         8
 
-PSP_MODULE_INFO("LangSwapper", PSP_MODULE_KERNEL, 1, 6);
+PSP_MODULE_INFO("LangSwapper", PSP_MODULE_KERNEL, 1, 7);
 
 SceUID thid;
 u32 _sceImposeSetLanguageMode;
@@ -60,22 +61,23 @@ void ClearCaches(void) {
 }
 
 /**
- * Patches sceUtilitySavedataInitStart by hooking into the function and changing the language parameter.
- * Funny stuff happens, so we're using user space for some stuff or some games will break.
+ * Patches sceUtilitySavedataInitStart by hooking into the function and changing the language/button parameter.
+ * Funny stuff happens, so we're using scratchpad memory for some stuff or some games will break.
  *
  * Huzzah, double pointers~.
  */
 void patched_sceUtilitySavedataInitStart(u32 a0, u32 a1) {
 	u32 k1 = pspSdkSetK1(0);
-	int i, param_struct;
+	int param_struct;
 	int ptr = SCRATCH_SEGMENT_ADDR;
 
-	// Get the language pointer and store it in a unused location in scratchpad memory.
+	// Get the pointer and store it in a unused location in scratchpad memory.
 	_sw((a1 + 0x4), ptr);
 
-	// Accesses the final location of the structure in scratchpad memory and patches the final values for language.
+	// Accesses the final location of the structure in scratchpad memory and patches the final values for language and button input.
 	param_struct = _lw(ptr);
 	_sw(value, param_struct);
+	_sw(value, param_struct + 0x4);
 
 	pspSdkSetK1(k1);
 
@@ -86,13 +88,20 @@ void patched_sceUtilitySavedataInitStart(u32 a0, u32 a1) {
 /**
  * This function searches kernel memory and patches $a0 based on sceUtilityGetSystemParamInt.
  *
+ * @Language
  * @ASM_OLD - sltiu $v1, $a0, 12.
  * @ASM_NEW - addiu $a0, zero, $0001
  *
+ * @Button
+ * @ASM_OLD - sltiu $a3, $a1, 2
+ * @ASM_NEW - addiu $a1, zero, $0001
+ *
  * Up to 12 modes (0 to 11) exist for the language. With each number representing the language selected.
+ * For the button input, 0 represents O as "Enter" and X as "Back". Setting it to 1 will switch it to set X as "Enter"
+ * and O as "Back".
  *
  * The value is grabbed by sceUtilityGetSystemParamInt and then set to be used by sceImposeSetLanguageMode,
- * resulting in it setting the language set by the system.
+ * resulting in it setting the language and button input set by the system.
  *
  * TLDR: The function below performs voodoo magic, which does things in memory. :)
  */
@@ -151,6 +160,7 @@ int mainThread(SceSize args, void *argp) {
 	if (_sceUtilityMsgDialogInitStart) {
 		patchSaveData(_sceUtilityMsgDialogInitStart, MsgDialogInitStart_OFFSET);
 	}
+
 	ClearCaches();
 	return 0;
 }

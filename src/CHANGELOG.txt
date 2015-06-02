@@ -28,3 +28,7 @@ v1.5
 v1.6
 ------------
 [!] Fixed a bug where the wrong offset was used for sceUtilityMsgDialogInitStart.
+
+v1.7
+------------
+[!] Fixed a bug where button input was not swapped during saving/loading and autosaving/autoloading.
